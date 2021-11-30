@@ -1,0 +1,230 @@
+\documentclass[oneside,a4paper,11pt]{article}
+\usepackage{graphicx}
+\usepackage[section]{placeins}
+\graphicspath{{~/templates/}, {../images/}}
+
+\usepackage{listings}
+%\lstset{language=C}
+\usepackage{color}
+\definecolor{mygreen}{rgb}{0,0.6,0}
+\definecolor{mygray}{rgb}{0.5,0.5,0.5}
+\definecolor{mymauve}{rgb}{0.58,0,0.82}
+
+\lstset{ 
+	basicstyle=\footnotesize,        % the size of the fonts that are used for the code
+	captionpos=b,                    % sets the caption-position to bottom
+	commentstyle=\color{mygreen},    % comment style
+	extendedchars=true,              % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+	keywordstyle=\color{blue},       % keyword style
+	language=C,                 % the language of the code
+	tabsize=2,	                   % sets default tabsize to 2 spaces
+}
+
+
+
+
+\makeindex
+\begin{document}
+	\begin{titlepage}
+		\includegraphics[width=4cm]{logopopo.png}
+		\hspace*{\fill}
+		\includegraphics[width=6cm]{univlille.png}
+		
+		\begin{center}
+			\vspace{1cm}
+			\textbf{TP Réseaux locaux industriels}\\
+			\textbf{Commande en réseau}\\
+			\vspace{1cm}
+			\textbf{Valentin DOSIAS, Maxence NEUS}\\
+			\vspace{3cm}
+			%\includegraphics[width=13cm]{titlepage.png}\\
+			\vspace{\fill}
+			\textbf{Novembre 2021}\\
+		\end{center}
+	\end{titlepage}
+
+	\tableofcontents
+	\newpage
+
+	\section{Test de l'application exemple}
+	
+	\section{Version sans mode "Réseau CAN"}
+	
+		\subsection{Token-Bus}
+		
+		\begin{figure}[h]
+			\centering
+			\begin{lstlisting}
+int main(int argc,char *argv[])
+{
+	int valId,capteur1,capteur2,msg;
+	valId=litId();
+	capteur2=litEtatCapteur();
+	etatVert();
+	int fr =0;
+	while(1)
+	{
+		capteur1=capteur2;
+		capteur2=litEtatCapteur();
+		if ((capteur1==1) && (capteur2==0))// front descendant
+		{
+			fr = 1;
+			if (valId!=7){// Permet aux trains d'arriver en boucle
+				etatRouge();
+			}
+		}
+		msg=ecouteReseau();
+		
+		if (msg==valId+1+10) etatVert();
+		if (msg%10 == valId-1) {
+			emetMsg(fr*10+valId);
+			fr =0;
+		}
+		
+	}
+}
+			\end{lstlisting}
+		\caption{Code du Token Ring}
+		\end{figure}
+		
+		\newpage
+		
+		\subsection{CSMA/CD}
+		
+		\begin{figure}[h]
+		\centering
+			\begin{lstlisting}
+int main(int argc,char *argv[])
+{
+	int valId,capteur1,capteur2,msg;
+	valId=litId();
+	capteur2=litEtatCapteur();
+	etatVert();
+	while(1)
+	{
+		capteur1=capteur2;
+		capteur2=litEtatCapteur();
+		if ((capteur1==1) && (capteur2==0))// front descendant
+		{
+			emetMsg(valId);
+			while (ecouteReseau()==-2) {//Attend qu'il n'y ai pas de collision
+				attendMs(valId*20);
+				emetMsg(valId);
+			}
+			if (valId!=7){// Permet aux trains d'arriver en boucle
+				etatRouge();
+			}
+		}
+		msg=ecouteReseau();
+		if (msg==valId+1) etatVert();
+	}
+}
+			\end{lstlisting}
+			\caption{Code du CSMA/CD}
+		\end{figure}		
+	\newpage
+	
+	\section{Réseau temps réel ?}
+	
+	Avec l'algorithme du Token Ring, on peut dire que le pire des cas correspond à un noeud qui veut émettre sur le réseau alors que le Token est actuellement au noeud suivant, dans ce cas le noeud devra attendre aue le Token fasse un tour complet pour lui revenir. On peut prédire ce temps à partir de l'architecture du système. Il est donc bien temps réel.
+	
+	Pour l'algorithme CSMA/CD, il est possible qu'un noeud voullant émettre se voit bloqué par des collisions répetées sur le réseau, il est impossible de borner le nombre de ces collisions et il est donc également impossible de borner le temps de réponse. Il n'est donc pas temps réel.
+	
+	Pour notre application, l'arrivé d'un train n'as pas besoin de se passer avant une date précise, dans la limite du raisonnable. Cette application ne nécessite donc pas d'être temps réel.
+	
+	\newpage	
+		
+	\section{Version avec orange}
+	
+	\begin{figure}[h]
+		\begin{lstlisting}
+int main(int argc,char *argv[]){
+	int valId,capteur1,capteur2,msg;
+	valId=litId();
+	capteur2=litEtatCapteur();
+	etatVert();
+	int fr =0;
+	int cases[2] = {0, 0};
+	while(1) {
+		capteur1=capteur2;
+		capteur2=litEtatCapteur();
+		if ((capteur1==1) && (capteur2==0)) { // front descendant
+			if (valId != 7) cases[0]++;
+			fr = 1;
+		}
+		msg=ecouteReseau();
+		// Mise a jour des compteurs pour les cases n+1 et n+2
+		if (msg==10+valId+1) {
+			cases[0]--;
+			cases[1]++;
+		}
+		if (msg==10+valId+2) cases[1]--;
+		if (cases[0]==1) etatRouge(); // Un train dans la case n+1
+		else if (cases[1]==1 && cases[0]==0) etatOrange(); // Un train dans la case n+2
+		else etatVert(); // pas de trains proche
+		if (msg%10 == valId-1 ) {
+			emetMsg(fr*10+valId);
+			fr =0;
+		}
+	}
+}
+		\end{lstlisting}
+		\caption{Code inclusion du Orange}
+	\end{figure}
+	
+	
+	
+	\section{Robuste aux perturbations ?}	
+	
+	\begin{figure}[h]
+		\centering
+		\begin{lstlisting}
+int main(int argc,char *argv[])
+{
+	int valId,capteur1,capteur2,msg;
+	valId=litId();
+	capteur2=litEtatCapteur();
+	etatVert();
+	int fr =0;
+	int cases[2] = {0, 0};
+	
+	while(1)
+	{
+		capteur1=capteur2;
+		capteur2=litEtatCapteur();
+		if ((capteur1==1) && (capteur2==0))// front descendant
+		{
+			if (valId != 7) cases[0]++;
+			fr = 1;
+		}
+		msg=ecouteReseau();
+		// Mise a jour des compteurs pour les cases n+1 et n+2
+		if (msg==10+valId+1)
+		{
+			cases[0]--;
+			cases[1]++;
+		}
+		if (msg==10+valId+2) cases[1]--;
+		
+		if (cases[0]==1) etatRouge(); // Un train dans la case n+1
+		else if (cases[1]==1 && cases[0]==0) etatOrange(); // Un train dans la case n+2
+		else etatVert(); // pas de trains proche
+		
+		if (msg%10 == valId-1 ) {
+			emetMsg(fr*10+valId);
+			// Si le message n'est pas parti on attend et on le renvoie
+			while (ecouteReseau()==-1) {
+				attendMs(valId);
+				emetMsg(fr*10+valId);
+			}
+			fr =0;
+		}
+	}
+}
+		\end{lstlisting}
+		\caption{Ajout de la gestion des perturbations}
+	\end{figure}
+
+	Pour gérer les perturbations, on ecoute le réseau juste après l'envoi et si on n'entend rien, alors on renvoie le message.
+
+\end{document}
